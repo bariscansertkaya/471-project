@@ -1,10 +1,10 @@
 # 🧾 Anonymous P2P Chat Network - Task List
 
 ## 🚀 Project Setup & Foundation
-- [ ] Initialize project structure and dependencies
-- [ ] Set up PyQt6 development environment
+- [X] Initialize project structure and dependencies
+- [X] Set up PyQt6 development environment
 - [ ] Install required packages (scapy, cryptography, etc.)
-- [ ] Create main application entry point
+- [X] Create main application entry point
 
 ## 🔐 Cryptography Module
 - [ ] Implement RSA 2048-bit key pair generation
@@ -55,25 +55,25 @@
 
 ## 🧑‍💻 GUI Development (PyQt6)
 ### Main Window Structure
-- [ ] Create main application window
-- [ ] Design chat message display area
-- [ ] Implement nickname list sidebar
-- [ ] Create message input field
-- [ ] Add send button functionality
+- [X] Create main application window
+- [X] Design chat message display area
+- [X] Implement nickname list sidebar
+- [X] Create message input field
+- [X] Add send button functionality
 
 ### Menu System
-- [ ] Create File menu
-  - [ ] Generate Keys option
-  - [ ] Connect to Network (nickname prompt)
-  - [ ] Disconnect from Network
-  - [ ] Exit application
-- [ ] Create Preferences menu
-  - [ ] Toggle Client/Gateway Mode
-- [ ] Create Help menu
-  - [ ] Developer information dialog
+- [X] Create File menu
+  - [X] Generate Keys option
+  - [X] Connect to Network (nickname prompt)
+  - [X] Disconnect from Network
+  - [X] Exit application
+- [X] Create Preferences menu
+  - [X] Toggle Client/Gateway Mode
+- [X] Create Help menu
+  - [X] Developer information dialog
 
 ### UI Components
-- [ ] Design and implement nickname input dialog
+- [X] Design and implement nickname input dialog
 - [ ] Create key generation progress/status display
 - [ ] Implement connection status indicators
 - [ ] Add message timestamp display
@@ -88,7 +88,7 @@
 - [ ] Create join message broadcast
 
 ### Chat Operations
-- [ ] Implement real-time message sending
+- [X] Implement real-time message sending
 - [ ] Create message reception and display
 - [ ] Add user join/quit notifications
 - [ ] Implement typing indicators (optional)
