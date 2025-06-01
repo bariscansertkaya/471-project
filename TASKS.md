@@ -3,34 +3,34 @@
 ## 🚀 Project Setup & Foundation
 - [X] Initialize project structure and dependencies
 - [X] Set up PyQt6 development environment
-- [ ] Install required packages (scapy, cryptography, etc.)
+- [X] Install required packages (scapy, cryptography, etc.)
 - [X] Create main application entry point
 
 ## 🔐 Cryptography Module
-- [x] Implement RSA 2048-bit key pair generation
-- [x] Create key storage and loading functionality
-- [x] Implement message encryption with recipient's public key
-- [x] Implement message decryption with private key
+- [X] Implement RSA 2048-bit key pair generation
+- [X] Create key storage and loading functionality
+- [X] Implement message encryption with recipient's public key
+- [X] Implement message decryption with private key
 - [ ] Add digital signature creation and verification
 - [ ] Create broadcast encryption (encrypt with multiple public keys)
-- [x] Handle base64 encoding/decoding for public keys
+- [X] Handle base64 encoding/decoding for public keys
 
 ## 📦 Packet Structure & Message Handling
-- [ ] Define JSON message format structure
-- [ ] Implement message types: join, chat, quit
-- [ ] Create message ID generation using UUID4
-- [ ] Add timestamp handling (Unix epoch)
-- [ ] Implement JSON serialization/deserialization
-- [ ] Create packet encryption wrapper
-- [ ] Implement Raw packet creation for scapy
+- [X] Define JSON message format structure
+- [X] Implement message types: join, chat, quit
+- [X] Create message ID generation using UUID4
+- [X] Add timestamp handling (Unix epoch)
+- [X] Implement JSON serialization/deserialization
+- [X] Create packet encryption wrapper
+- [X] Implement Raw packet creation for scapy
 
 ## 🌐 Network Communication Core
 ### Local Network (Broadcast)
-- [ ] Implement Ethernet layer broadcast using scapy
-- [ ] Create IP address spoofing functionality
-- [ ] Create MAC address spoofing functionality
-- [ ] Implement sendp() packet transmission
-- [ ] Create packet reception and filtering
+- [X] Implement Ethernet layer broadcast using scapy
+- [X] Create IP address spoofing functionality
+- [X] Create MAC address spoofing functionality
+- [X] Implement sendp() packet transmission
+- [X] Create packet reception and filtering
 
 ### Gateway Mode
 - [ ] Implement TCP/UDP socket for inter-subnet communication
@@ -108,7 +108,7 @@
 - [ ] Implement peer validation
 
 ## 🧪 Testing & Validation
-- [ ] Create unit tests for cryptography functions
+- [X] Create unit tests for cryptography functions
 - [ ] Test packet spoofing with Wireshark
 - [ ] Validate message encryption/decryption
 - [ ] Test gateway relay functionality
