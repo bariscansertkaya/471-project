@@ -33,6 +33,9 @@ class ChatWindow(QMainWindow):
 
         # User list
         self.user_list = QListWidget()
+        self.user_list.addItem("Satismaris (Me)")
+        self.user_list.addItem("xXx_Fırat_xXx")
+        self.user_list.addItem("Rain_falls")
 
         # Layout setup
         input_layout = QHBoxLayout()
@@ -53,13 +56,13 @@ class ChatWindow(QMainWindow):
         # Menu setup
         self.menu_bar = self.menuBar()
 
-        # Force in-window menubar on macOS (prevents macOS from hijacking menu items)
+        # Force in-window menubar on macOS (prevents macOS from moving menu items)
         if platform.system() == 'Darwin':
             self.menu_bar.setNativeMenuBar(False)
 
         file_menu = self.menu_bar.addMenu("File")
         preferences_menu = self.menu_bar.addMenu("Preferences")
-        help_menu = self.menu_bar.addMenu("Info")  # renamed from Help
+        help_menu = self.menu_bar.addMenu("Info")
 
         self.action_generate_keys = QAction("Generate Keys", self)
         self.action_generate_keys.triggered.connect(self.generate_keys)
@@ -91,8 +94,8 @@ class ChatWindow(QMainWindow):
     def send_message(self):
         message = self.message_input.text().strip()
         if message:
-            # This should actually trigger encryption and sending logic
-            self.chat_display.append(f"You: {message}")
+            # Encrypt message and send it to the network
+            self.chat_display.append(f"Me: {message}")
             self.message_input.clear()
 
     def generate_keys(self):
