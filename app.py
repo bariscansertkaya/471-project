@@ -62,7 +62,7 @@ class ChatWindow(QMainWindow):
 
         file_menu = self.menu_bar.addMenu("File")
         preferences_menu = self.menu_bar.addMenu("Preferences")
-        help_menu = self.menu_bar.addMenu("Info")
+        help_menu = self.menu_bar.addMenu("Help")
 
         self.action_generate_keys = QAction("Generate Keys", self)
         self.action_generate_keys.triggered.connect(self.generate_keys)

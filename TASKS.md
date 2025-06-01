@@ -7,13 +7,13 @@
 - [X] Create main application entry point
 
 ## 🔐 Cryptography Module
-- [ ] Implement RSA 2048-bit key pair generation
-- [ ] Create key storage and loading functionality
-- [ ] Implement message encryption with recipient's public key
-- [ ] Implement message decryption with private key
+- [x] Implement RSA 2048-bit key pair generation
+- [x] Create key storage and loading functionality
+- [x] Implement message encryption with recipient's public key
+- [x] Implement message decryption with private key
 - [ ] Add digital signature creation and verification
 - [ ] Create broadcast encryption (encrypt with multiple public keys)
-- [ ] Handle base64 encoding/decoding for public keys
+- [x] Handle base64 encoding/decoding for public keys
 
 ## 📦 Packet Structure & Message Handling
 - [ ] Define JSON message format structure
