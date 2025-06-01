@@ -1,3 +1,7 @@
 *.pdf
 
 /venv/
+
+/keys/
+
+test_crypto.py
