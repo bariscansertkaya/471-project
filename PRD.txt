@@ -1,0 +1,164 @@
+## 🧾 Product Requirements Document (PRD)
+
+### 📌 Project Title:
+
+**Anonymous Peer-to-Peer Chat Network (CSE471 Term Project)**
+
+### 🧠 Objective:
+
+Develop a cross-subnet anonymous chat application using a virtual overlay network. The app supports peer discovery, encrypted communication, and spoofed packets over the local subnet, with gateway nodes relaying traffic between subnets.
+
+---
+
+## 1. 🧱 Application Modes
+
+### Modes:
+
+* **Client Peer**: Participates in chat via local subnet broadcast.
+* **Gateway Peer**: Participates in chat and relays packets between subnets.
+
+### Toggling Mode:
+
+* Accessible from **Preferences** menu in PyQt6 UI.
+* Gateway mode enables TCP/UDP socket for receiving from other subnets and forwarding locally.
+
+---
+
+## 2. 🔐 Cryptography
+
+### Keys:
+
+* RSA 2048-bit key pair
+* Menu: **File → Generate Keys**
+* Public key broadcasted with nickname on joining
+
+### Encryption:
+
+* All chat messages are encrypted with recipient's public key
+* For broadcasts, encrypt with each known public key (or encrypt body and sign)
+* Message authenticity can be optionally verified via digital signatures
+
+---
+
+## 3. 📦 Packet Structure
+
+### Message Format (JSON before encryption):
+
+```json
+{
+  "type": "join|chat|quit",
+  "nickname": "Ustam",
+  "pubkey": "<base64>",
+  "msg_id": "<uuid4>",
+  "timestamp": "<unix_epoch>",
+  "body": "<text OR multipart info>"
+}
+```
+
+### Transmission:
+
+* Encrypted JSON → packed in `Raw(load=...)`
+* Sent via `scapy.sendp()` with spoofed:
+
+  * **IP source address**
+  * **Ethernet (MAC) source address**
+
+---
+
+## 4. 🌐 Network Behavior
+
+### Local Communication:
+
+* Uses **broadcast** with spoofed source IP/MAC
+* Sent via **Scapy** to Ethernet layer
+
+### Subnet-to-Subnet Relay (Gateways):
+
+* Gateway nodes relay all valid messages to known gateway IPs using:
+
+  * **TCP or UDP**, your choice
+* Packets from remote gateways are rebroadcast locally
+
+### Gateway IP List:
+
+* Static text file (e.g., `gateways.txt`) with one IP per line
+* Used only in gateway mode
+
+---
+
+## 5. 🌪️ Broadcast Control
+
+### Loop Prevention:
+
+* Each peer keeps a **cache of seen message IDs** with timestamps
+* TTL field may be added for extra safety
+* Duplicate messages or expired TTLs are ignored
+
+---
+
+## 6. 📤 Large Message Handling
+
+* Large messages are split manually into parts:
+
+  * Each part includes `part_idx`, `total_parts`, and `msg_id`
+* Reassembled on receiver side
+
+---
+
+## 7. 🧑‍💻 GUI (PyQt6)
+
+### Main Views:
+
+* Chat Window (nickname list on the side)
+* Message Input Field
+* Menu Bar:
+
+  * **File**
+
+    * Generate Keys
+    * Connect to Network → prompts nickname
+    * Disconnect from Network
+    * Exit
+  * **Preferences**
+
+    * Toggle Client / Gateway Mode
+  * **Help**
+
+    * Developer info
+
+---
+
+## 8. 🛠️ Project Flow
+
+### Startup Flow:
+
+1. Launch app
+2. Generate RSA keys (or load existing)
+3. Choose mode (Preferences)
+4. Connect → input nickname
+5. App broadcasts `join` message
+
+### During Chat:
+
+* Messages are encrypted and sent via spoofed broadcast
+* Gateway relays messages across subnets
+* Messages are decrypted, validated, and displayed in chat view
+
+### Disconnect:
+
+* App broadcasts a `quit` message
+
+---
+
+## 9. 🌟 Bonus Features (Optional)
+
+* 🔐 **Private Chat**: UI can allow sending to a specific user (encrypted with their public key)
+* 📁 **Encrypted File Transfer**: Use base64 + chunking
+
+---
+
+## 10. 🧪 Development/Testing Notes
+
+* Test locally using 2+ terminals, virtual machines, or Docker
+* Wireshark should show spoofed IP/MAC frames
+* Use logs to track message IDs and prevent cycles
