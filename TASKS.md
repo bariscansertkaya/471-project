@@ -75,36 +75,36 @@
 ### UI Components
 - [X] Design and implement nickname input dialog
 - [ ] Create key generation progress/status display
-- [ ] Implement connection status indicators
-- [ ] Add message timestamp display
-- [ ] Create user list with online/offline status
+- [X] Implement connection status indicators
+- [X] Add message timestamp display
+- [X] Create user list with online/offline status
 
 ## 🛠️ Application Flow Logic
 ### Startup Flow
-- [ ] Implement application launch sequence
-- [ ] Create key loading/generation on startup
-- [ ] Add mode selection (Client/Gateway)
-- [ ] Implement network connection logic
-- [ ] Create join message broadcast
+- [X] Implement application launch sequence
+- [X] Create key loading/generation on startup
+- [X] Add mode selection (Client/Gateway)
+- [X] Implement network connection logic
+- [X] Create join message broadcast
 
 ### Chat Operations
 - [X] Implement real-time message sending
-- [ ] Create message reception and display
-- [ ] Add user join/quit notifications
+- [X] Create message reception and display
+- [X] Add user join/quit notifications
 - [ ] Implement typing indicators (optional)
 - [ ] Create message history storage
 
 ### Shutdown Flow
-- [ ] Implement graceful disconnect
-- [ ] Send quit message broadcast
-- [ ] Clean up network resources
+- [X] Implement graceful disconnect
+- [X] Send quit message broadcast
+- [X] Clean up network resources
 - [ ] Save application state
 
 ## 🔍 Network Discovery & Peer Management
-- [ ] Implement peer discovery from join messages
-- [ ] Create peer list management
+- [X] Implement peer discovery from join messages
+- [X] Create peer list management
 - [ ] Handle peer timeout/offline detection
-- [ ] Add public key storage per peer
+- [X] Add public key storage per peer
 - [ ] Implement peer validation
 
 ## 🧪 Testing & Validation
