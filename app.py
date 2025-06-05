@@ -28,13 +28,33 @@ class NetworkReceiver(QThread):
     def handle_packet(self, packet):
         if not packet.haslayer(Raw):
             return
+        
         raw_data = packet[Raw].load
+        print(f"[DEBUG] NetworkReceiver: Received packet with {len(raw_data)} bytes")
+        
+        # Try encrypted message first
         try:
+            print("[DEBUG] Attempting to decrypt message...")
             message = ChatMessage.decrypt(raw_data, self.private_key)
             if message:
+                print(f"[DEBUG] Successfully decrypted {message.type} message from {message.nickname}")
                 self.message_received.emit(message.nickname, message.type, message.data)
+                return
         except Exception as e:
-            print(f"[!] Error processing packet: {e}")
+            print(f"[DEBUG] Decryption failed (this is normal for raw messages): {e}")
+
+        # Try raw message
+        try:
+            print("[DEBUG] Attempting to parse as raw message...")
+            message = ChatMessage.from_bytes(raw_data)
+            if message:
+                print(f"[DEBUG] Successfully parsed raw {message.type} message from {message.nickname}")
+                self.message_received.emit(message.nickname, message.type, message.data)
+                return
+        except Exception as e:
+            print(f"[DEBUG] Raw message parsing failed: {e}")
+            
+        print("[DEBUG] Packet could not be parsed as either encrypted or raw message")
 
     def run(self):
         self.running = True
@@ -135,6 +155,9 @@ class ChatWindow(QMainWindow):
         self.action_about = QAction("About Developer", self)
         self.action_about.triggered.connect(self.show_about)
 
+        self.action_show_debug_info = QAction("Show Debug Info", self)
+        self.action_show_debug_info.triggered.connect(self.show_debug_info)
+
         file_menu.addAction(self.action_generate_keys)
         file_menu.addAction(self.action_connect)
         file_menu.addAction(self.action_disconnect)
@@ -143,6 +166,7 @@ class ChatWindow(QMainWindow):
 
         preferences_menu.addAction(self.action_toggle_mode)
         help_menu.addAction(self.action_about)
+        help_menu.addAction(self.action_show_debug_info)
 
     def load_existing_keys(self):
         try:
@@ -241,8 +265,22 @@ class ChatWindow(QMainWindow):
 
         try:
             msg = ChatMessage("chat", self.nickname, message_text)
-            for peer in self.peer_manager.peers.values():
-                pubkey_b64 = peer["public_key"]
+            
+            # DEBUG: Check peer count
+            peer_count = len(self.peer_manager.peers)
+            print(f"[DEBUG] Sending message to {peer_count} peers")
+            self.chat_display.append(f"🔍 DEBUG: Attempting to send to {peer_count} peers")
+            
+            if peer_count == 0:
+                self.chat_display.append("⚠️ WARNING: No peers available to send message to!")
+                print("[DEBUG] No peers in peer_manager.peers!")
+                return
+            
+            # DEBUG: Show all peers
+            for peer_id, peer_info in self.peer_manager.peers.items():
+                print(f"[DEBUG] Peer {peer_id[:8]}...: {peer_info['nickname']}")
+                pubkey_b64 = peer_info["public_key"]
+                print(f"[DEBUG] Sending to {peer_info['nickname']}, pubkey length: {len(pubkey_b64)}")
                 send_encrypted_message(msg, pubkey_b64)
 
             timestamp = time.strftime("%H:%M:%S")
@@ -250,19 +288,33 @@ class ChatWindow(QMainWindow):
             self.message_input.clear()
 
         except Exception as e:
+            print(f"[ERROR] Send message failed: {e}")
             QMessageBox.critical(self, "Send Error", f"Failed to send message: {e}")
 
     def send_join_message(self):
         try:
             public_key_b64 = export_public_key_base64(self.public_key)
             msg = ChatMessage("join", self.nickname, public_key_b64)
+            
+            print(f"[DEBUG] Sending JOIN message, my pubkey length: {len(public_key_b64)}")
+            self.chat_display.append(f"🔍 DEBUG: Sending JOIN with pubkey length {len(public_key_b64)}")
 
-            # Yayın: tüm bilinen peerlara şifreli olarak gönder
-            for peer in self.peer_manager.peers.values():
+            # Send to known peers (if any)
+            peer_count = len(self.peer_manager.peers)
+            print(f"[DEBUG] Sending JOIN to {peer_count} known peers")
+            
+            for peer_id, peer in self.peer_manager.peers.items():
+                print(f"[DEBUG] Sending JOIN to known peer: {peer['nickname']}")
                 send_encrypted_message(msg, peer["public_key"])
+            
+            # ALSO send as raw broadcast to discover new peers
+            print("[DEBUG] Broadcasting JOIN as raw message for peer discovery")
+            self.chat_display.append("📡 Broadcasting JOIN message for peer discovery")
+            send_raw_message(msg)
 
         except Exception as e:
-            print(f"Failed to send join message: {e}")
+            print(f"[ERROR] Failed to send join message: {e}")
+            self.chat_display.append(f"❌ Join message failed: {e}")
 
 
     def send_quit_message(self):
@@ -275,6 +327,8 @@ class ChatWindow(QMainWindow):
 
     def on_message_received(self, nickname, message_type, data):
         timestamp = time.strftime("%H:%M:%S")
+        
+        print(f"[DEBUG] Received {message_type} from {nickname}, data length: {len(data) if data else 0}")
 
         if message_type == "chat":
             if nickname != self.nickname:
@@ -282,20 +336,32 @@ class ChatWindow(QMainWindow):
 
         elif message_type == "join":
             if nickname != self.nickname:
+                print(f"[DEBUG] Processing JOIN from {nickname}, pubkey length: {len(data)}")
                 self.chat_display.append(f"[{timestamp}] 👋 {nickname} joined the chat")
+                self.chat_display.append(f"🔍 DEBUG: JOIN from {nickname}, pubkey length: {len(data)}")
                 
-                # Burada gelen data = public_key
+                # Add peer to manager
+                old_peer_count = len(self.peer_manager.peers)
                 self.peer_manager.add_peer(nickname, data)
+                new_peer_count = len(self.peer_manager.peers)
+                
+                print(f"[DEBUG] Peer count: {old_peer_count} -> {new_peer_count}")
+                self.chat_display.append(f"🔍 DEBUG: Peer count: {old_peer_count} -> {new_peer_count}")
 
+                # Update UI
                 user_items = [self.user_list.item(i).text() for i in range(self.user_list.count())]
                 user_entry = f"👤 {nickname}"
                 if user_entry not in user_items:
                     self.user_list.addItem(user_entry)
 
-                # Bu kişiye ben de kendimi tanıtayım
-                my_key_b64 = export_public_key_base64(self.public_key)
-                response_msg = ChatMessage("join", self.nickname, my_key_b64)
-                send_encrypted_message(response_msg, data)  # data = public key b64
+                # Send my info back
+                try:
+                    my_key_b64 = export_public_key_base64(self.public_key)
+                    response_msg = ChatMessage("join", self.nickname, my_key_b64)
+                    print(f"[DEBUG] Sending JOIN response to {nickname}")
+                    send_encrypted_message(response_msg, data)  # data = their public key
+                except Exception as e:
+                    print(f"[ERROR] Failed to send JOIN response: {e}")
 
         elif message_type == "quit":
             if nickname != self.nickname:
@@ -315,6 +381,30 @@ class ChatWindow(QMainWindow):
 
     def show_about(self):
         QMessageBox.information(self, "About", "Barış Can Sertkaya \n20210702022\nCSE471")
+
+    def show_debug_info(self):
+        """Display debug information about current peer status"""
+        peer_count = len(self.peer_manager.peers)
+        debug_info = f"""
+🔍 DEBUG INFORMATION:
+
+Connection Status: {'Connected' if self.is_connected else 'Disconnected'}
+Nickname: {self.nickname or 'None'}
+Mode: {'Gateway' if self.is_gateway_mode else 'Client'}
+
+Peer Count: {peer_count}
+        """
+        
+        if peer_count > 0:
+            debug_info += "\nKnown Peers:\n"
+            for peer_id, peer_info in self.peer_manager.peers.items():
+                debug_info += f"  - {peer_info['nickname']} (ID: {peer_id[:8]}...)\n"
+                debug_info += f"    Public Key Length: {len(peer_info['public_key'])} chars\n"
+        else:
+            debug_info += "\nNo peers known.\n"
+            
+        self.chat_display.append(debug_info)
+        print(debug_info)
 
     def closeEvent(self, event):
         if self.is_connected:

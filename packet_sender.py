@@ -19,21 +19,59 @@ def generate_fake_ip():
 
 # --- Encrypted Message Sender ---
 def send_encrypted_message(msg: ChatMessage, recipient_pubkey_b64: str):
-    print("[debug] recipient_pubkey_b64 length:", len(recipient_pubkey_b64))
+    print(f"[DEBUG] send_encrypted_message called:")
+    print(f"  - Message type: {msg.type}")
+    print(f"  - Sender: {msg.nickname}")
+    print(f"  - Data length: {len(msg.data) if msg.data else 0}")
+    print(f"  - Recipient pubkey length: {len(recipient_pubkey_b64) if recipient_pubkey_b64 else 0}")
+    
+    if not recipient_pubkey_b64:
+        print("[ERROR] recipient_pubkey_b64 is None or empty!")
+        return
+    
+    if len(recipient_pubkey_b64) < 100:  # RSA 2048 base64 should be much longer
+        print(f"[ERROR] recipient_pubkey_b64 seems too short: {len(recipient_pubkey_b64)} chars")
+        print(f"[ERROR] Content: {recipient_pubkey_b64[:100]}...")
+        return
+    
     try:
-        encrypted_bytes = msg.encrypt(import_public_key_base64(recipient_pubkey_b64))
+        print("[DEBUG] Attempting to import public key...")
+        recipient_pubkey = import_public_key_base64(recipient_pubkey_b64)
+        print("[DEBUG] Public key imported successfully")
+        
+        print("[DEBUG] Attempting to encrypt message...")
+        encrypted_bytes = msg.encrypt(recipient_pubkey)
+        print(f"[DEBUG] Message encrypted successfully, size: {len(encrypted_bytes)} bytes")
+        
     except Exception as e:
-        print("[!] Encryption failed:", e)
+        print(f"[ERROR] Encryption failed: {e}")
+        import traceback
+        traceback.print_exc()
         return
 
-    payload = Raw(load=encrypted_bytes)
-    pkt = Ether(src=generate_fake_mac(), dst=BROADCAST_MAC) / \
-          IP(src=generate_fake_ip(), dst=DEST_IP) / \
-          UDP(sport=random.randint(1024, 65535), dport=DEST_PORT) / \
-          payload
+    try:
+        payload = Raw(load=encrypted_bytes)
+        fake_mac = generate_fake_mac()
+        fake_ip = generate_fake_ip()
+        
+        pkt = Ether(src=fake_mac, dst=BROADCAST_MAC) / \
+              IP(src=fake_ip, dst=DEST_IP) / \
+              UDP(sport=random.randint(1024, 65535), dport=DEST_PORT) / \
+              payload
 
-    print(f"[*] Sending spoofed encrypted message from {pkt[IP].src} / {pkt[Ether].src}")
-    sendp(pkt, iface=INTERFACE, verbose=False)
+        print(f"[DEBUG] Sending encrypted packet:")
+        print(f"  - From MAC: {fake_mac}")
+        print(f"  - From IP: {fake_ip}")
+        print(f"  - Payload size: {len(encrypted_bytes)} bytes")
+        print(f"  - To port: {DEST_PORT}")
+        
+        sendp(pkt, iface=INTERFACE, verbose=False)
+        print("[DEBUG] Packet sent successfully!")
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to send packet: {e}")
+        import traceback
+        traceback.print_exc()
 
 # --- Unencrypted Raw Message Sender ---
 def send_raw_message(msg: ChatMessage):
