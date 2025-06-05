@@ -299,23 +299,15 @@ class ChatWindow(QMainWindow):
             print(f"[DEBUG] Sending JOIN message, my pubkey length: {len(public_key_b64)}")
             self.chat_display.append(f"🔍 DEBUG: Sending JOIN with pubkey length {len(public_key_b64)}")
 
-            # Send to known peers (if any)
-            peer_count = len(self.peer_manager.peers)
-            print(f"[DEBUG] Sending JOIN to {peer_count} known peers")
-            
-            for peer_id, peer in self.peer_manager.peers.items():
-                print(f"[DEBUG] Sending JOIN to known peer: {peer['nickname']}")
-                send_encrypted_message(msg, peer["public_key"])
-            
-            # ALSO send as raw broadcast to discover new peers
-            print("[DEBUG] Broadcasting JOIN as raw message for peer discovery")
-            self.chat_display.append("📡 Broadcasting JOIN message for peer discovery")
+            # JOIN messages are too large for RSA encryption (~604 chars > 245 byte limit)
+            # So we always send them as raw broadcasts for peer discovery
+            print("[DEBUG] Broadcasting JOIN as raw message (too large for RSA encryption)")
+            self.chat_display.append("📡 Broadcasting JOIN message (raw - too large for encryption)")
             send_raw_message(msg)
 
         except Exception as e:
             print(f"[ERROR] Failed to send join message: {e}")
             self.chat_display.append(f"❌ Join message failed: {e}")
-
 
     def send_quit_message(self):
         try:
@@ -354,12 +346,13 @@ class ChatWindow(QMainWindow):
                 if user_entry not in user_items:
                     self.user_list.addItem(user_entry)
 
-                # Send my info back
+                # Send my info back as RAW broadcast (JOIN messages are too large for RSA encryption)
                 try:
                     my_key_b64 = export_public_key_base64(self.public_key)
                     response_msg = ChatMessage("join", self.nickname, my_key_b64)
-                    print(f"[DEBUG] Sending JOIN response to {nickname}")
-                    send_encrypted_message(response_msg, data)  # data = their public key
+                    print(f"[DEBUG] Sending JOIN response to {nickname} as RAW broadcast")
+                    self.chat_display.append(f"📡 Broadcasting JOIN response for {nickname}")
+                    send_raw_message(response_msg)  # Use raw instead of encrypted
                 except Exception as e:
                     print(f"[ERROR] Failed to send JOIN response: {e}")
 
