@@ -3,6 +3,7 @@ from scapy.layers.inet import IP, UDP
 from scapy.layers.l2 import Ether
 from crypto_utils import load_keys
 from message import ChatMessage
+from peer_manager import PeerManager
 import base64
 
 # --- Settings ---

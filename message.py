@@ -18,11 +18,22 @@ class ChatMessage:
             "nickname": self.nickname,
             "msg_id": self.msg_id,
             "timestamp": self.timestamp,
-            "data": self.data  # Still plaintext here
+            "data": self.data
         }
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict())
+
+    def to_bytes(self) -> bytes:
+        return self.to_json().encode("utf-8")
+
+    @staticmethod
+    def from_bytes(byte_data: bytes):
+        try:
+            return ChatMessage.from_json(byte_data.decode("utf-8"))
+        except Exception as e:
+            print("[!] Failed to deserialize from bytes:", e)
+            return None
 
     @staticmethod
     def from_json(json_str: str):
@@ -40,16 +51,10 @@ class ChatMessage:
             return None
 
     def encrypt(self, recipient_public_key) -> bytes:
-        """
-        Returns encrypted bytes ready to be packed into a Scapy packet.
-        """
         return encrypt_message(recipient_public_key, self.to_json())
 
     @staticmethod
     def decrypt(ciphertext: bytes, private_key):
-        """
-        Decrypts raw encrypted data and returns a ChatMessage object.
-        """
         try:
             plaintext = decrypt_message(private_key, ciphertext)
             return ChatMessage.from_json(plaintext)
