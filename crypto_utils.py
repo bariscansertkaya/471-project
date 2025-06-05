@@ -67,15 +67,15 @@ def decrypt_message(private_key, ciphertext: bytes) -> str:
 
 
 def export_public_key_base64(public_key) -> str:
-    """Export a public key as base64-encoded PEM string."""
-    pem = public_key.public_bytes(
-        encoding=serialization.Encoding.PEM,
+    """Export a public key's DER format as a base64-encoded string."""
+    der = public_key.public_bytes(
+        encoding=serialization.Encoding.DER,
         format=serialization.PublicFormat.SubjectPublicKeyInfo
     )
-    return base64.b64encode(pem).decode()
+    return base64.b64encode(der).decode()
 
 
 def import_public_key_base64(b64_string: str):
-    """Import a public key from a base64-encoded PEM string."""
-    pem = base64.b64decode(b64_string.encode())
-    return serialization.load_pem_public_key(pem)
+    """Import a public key from a base64-encoded DER string."""
+    der = base64.b64decode(b64_string.encode())
+    return serialization.load_der_public_key(der)
