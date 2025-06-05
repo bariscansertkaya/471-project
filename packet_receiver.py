@@ -11,23 +11,29 @@ INTERFACE = "en0"  # Change to your network interface
 DEST_PORT = 42069  # Must match sender
 
 # --- Message Handler ---
-def handle_packet(packet):
+def handle_packet(self, packet):
     if not packet.haslayer(Raw):
         return
 
     raw_data = packet[Raw].load
 
+    # 1. Önce şifre çözmeyi dener, eğer şifreli ise parse eder
     try:
-        # Attempt to decrypt the message
-        message = ChatMessage.decrypt(raw_data, private_key)
+        message = ChatMessage.decrypt(raw_data, self.private_key)
         if message:
-            print(f"\n📩 Received message from {message.nickname} [{message.type}] @ {message.timestamp}")
-            print(f"   ➤ {message.data}")
-        else:
-            print("[!] Failed to parse ChatMessage.")
-
+            self.message_received.emit(message.nickname, message.type, message.data)
+        return
     except Exception as e:
-        print(f"[!] Error processing packet: {e}")
+        pass
+
+    # 2. Eğer şifreli değilse, raw mesajını parse eder
+    try:
+        message = ChatMessage.from_bytes(raw_data)
+        if message:
+            self.message_received.emit(message.nickname, message.type, message.data)
+    except Exception as e:
+        print(f"[!] Failed to parse raw message: {e}")
+
 
 
 # --- Main Sniffer ---
