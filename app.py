@@ -256,16 +256,20 @@ class ChatWindow(QMainWindow):
         try:
             public_key_b64 = export_public_key_base64(self.public_key)
             msg = ChatMessage("join", self.nickname, public_key_b64)
-            send_raw_message(msg)
+
+            # Yayın: tüm bilinen peerlara şifreli olarak gönder
+            for peer in self.peer_manager.peers.values():
+                send_encrypted_message(msg, peer["public_key"])
 
         except Exception as e:
             print(f"Failed to send join message: {e}")
 
+
     def send_quit_message(self):
         try:
-            public_key_b64 = export_public_key_base64(self.public_key)
             msg = ChatMessage("quit", self.nickname, "")
-            send_encrypted_message(msg, public_key_b64)
+            for peer in self.peer_manager.peers.values():
+                send_encrypted_message(msg, peer["public_key"])
         except Exception as e:
             print(f"Failed to send quit message: {e}")
 
@@ -275,14 +279,24 @@ class ChatWindow(QMainWindow):
         if message_type == "chat":
             if nickname != self.nickname:
                 self.chat_display.append(f"[{timestamp}] {nickname}: {data}")
+
         elif message_type == "join":
             if nickname != self.nickname:
                 self.chat_display.append(f"[{timestamp}] 👋 {nickname} joined the chat")
+                
+                # Burada gelen data = public_key
                 self.peer_manager.add_peer(nickname, data)
+
                 user_items = [self.user_list.item(i).text() for i in range(self.user_list.count())]
                 user_entry = f"👤 {nickname}"
                 if user_entry not in user_items:
                     self.user_list.addItem(user_entry)
+
+                # Bu kişiye ben de kendimi tanıtayım
+                my_key_b64 = export_public_key_base64(self.public_key)
+                response_msg = ChatMessage("join", self.nickname, my_key_b64)
+                send_encrypted_message(response_msg, data)  # data = public key b64
+
         elif message_type == "quit":
             if nickname != self.nickname:
                 self.chat_display.append(f"[{timestamp}] 👋 {nickname} left the chat")
@@ -291,6 +305,7 @@ class ChatWindow(QMainWindow):
                     if f"👤 {nickname}" in self.user_list.item(i).text():
                         self.user_list.takeItem(i)
                         break
+
 
     def toggle_mode(self):
         self.is_gateway_mode = not self.is_gateway_mode
