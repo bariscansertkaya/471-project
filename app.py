@@ -328,33 +328,39 @@ class ChatWindow(QMainWindow):
 
         elif message_type == "join":
             if nickname != self.nickname:
-                print(f"[DEBUG] Processing JOIN from {nickname}, pubkey length: {len(data)}")
-                self.chat_display.append(f"[{timestamp}] 👋 {nickname} joined the chat")
-                self.chat_display.append(f"🔍 DEBUG: JOIN from {nickname}, pubkey length: {len(data)}")
-                
-                # Add peer to manager
-                old_peer_count = len(self.peer_manager.peers)
-                self.peer_manager.add_peer(nickname, data)
-                new_peer_count = len(self.peer_manager.peers)
-                
-                print(f"[DEBUG] Peer count: {old_peer_count} -> {new_peer_count}")
-                self.chat_display.append(f"🔍 DEBUG: Peer count: {old_peer_count} -> {new_peer_count}")
+                # Check if we already know this peer by their public key (which is in `data`)
+                is_new_peer = not self.peer_manager.peer_exists(data)
 
-                # Update UI
-                user_items = [self.user_list.item(i).text() for i in range(self.user_list.count())]
-                user_entry = f"👤 {nickname}"
-                if user_entry not in user_items:
-                    self.user_list.addItem(user_entry)
+                if is_new_peer:
+                    print(f"[DEBUG] Processing JOIN from new peer: {nickname}")
+                    self.chat_display.append(f"[{timestamp}] 👋 {nickname} joined the chat")
+                    
+                    # Add the new peer
+                    self.peer_manager.add_peer(nickname, data)
 
-                # Send my info back as RAW broadcast (JOIN messages are too large for RSA encryption)
-                try:
-                    my_key_b64 = export_public_key_base64(self.public_key)
-                    response_msg = ChatMessage("join", self.nickname, my_key_b64)
-                    print(f"[DEBUG] Sending JOIN response to {nickname} as RAW broadcast")
-                    self.chat_display.append(f"📡 Broadcasting JOIN response for {nickname}")
-                    send_raw_message(response_msg)  # Use raw instead of encrypted
-                except Exception as e:
-                    print(f"[ERROR] Failed to send JOIN response: {e}")
+                    # Update UI list
+                    user_items = [self.user_list.item(i).text() for i in range(self.user_list.count())]
+                    user_entry = f"👤 {nickname}"
+                    if user_entry not in user_items:
+                        self.user_list.addItem(user_entry)
+
+                    # Send my info back as a broadcast so the new peer can discover me
+                    try:
+                        my_key_b64 = export_public_key_base64(self.public_key)
+                        response_msg = ChatMessage("join", self.nickname, my_key_b64)
+                        print(f"[DEBUG] Sending JOIN response for {nickname} as broadcast")
+                        self.chat_display.append(f"📡 Broadcasting JOIN response for {nickname}")
+                        send_raw_message(response_msg)
+                    except Exception as e:
+                        print(f"[ERROR] Failed to send JOIN response: {e}")
+                else:
+                    # This is a JOIN from a known peer. Ignore it to prevent a loop.
+                    print(f"[DEBUG] Ignoring duplicate JOIN from known peer: {nickname}")
+                    # As a safeguard, ensure they're on the UI list in case they were removed by mistake
+                    user_items = [self.user_list.item(i).text() for i in range(self.user_list.count())]
+                    user_entry = f"👤 {nickname}"
+                    if user_entry not in user_items:
+                        self.user_list.addItem(user_entry)
 
         elif message_type == "quit":
             if nickname != self.nickname:

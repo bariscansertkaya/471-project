@@ -7,6 +7,11 @@ class PeerManager:
     def get_peer_id(self, public_key_b64):
         return hashlib.sha256(public_key_b64.encode()).hexdigest()
 
+    def peer_exists(self, public_key_b64):
+        """Check if a peer exists based on their public key."""
+        peer_id = self.get_peer_id(public_key_b64)
+        return peer_id in self.peers
+
     def add_peer(self, nickname, public_key_b64):
         peer_id = self.get_peer_id(public_key_b64)
         print(f"[DEBUG] PeerManager.add_peer: {nickname}")
