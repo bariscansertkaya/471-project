@@ -15,10 +15,13 @@ from message import ChatMessage
 from packet_sender import send_encrypted_message, send_raw_message
 from packet_receiver import INTERFACE, DEST_PORT
 from peer_manager import PeerManager
+from gateway_server import GatewayServer
+from gateway_client import GatewayClient, get_local_ip
+from message_cache import get_message_cache
 
 
 class NetworkReceiver(QThread):
-    message_received = pyqtSignal(str, str, str)  # nickname, type, data
+    message_received = pyqtSignal(str, str, str, str)  # nickname, type, data, source
 
     def __init__(self, private_key):
         super().__init__()
@@ -38,7 +41,7 @@ class NetworkReceiver(QThread):
             message = ChatMessage.decrypt(raw_data, self.private_key)
             if message:
                 print(f"[DEBUG] Successfully decrypted {message.type} message from {message.nickname}")
-                self.message_received.emit(message.nickname, message.type, message.data)
+                self.message_received.emit(message.nickname, message.type, message.data, "local")
                 return
         except Exception as e:
             print(f"[DEBUG] Decryption failed (this is normal for raw messages): {e}")
@@ -49,7 +52,7 @@ class NetworkReceiver(QThread):
             message = ChatMessage.from_bytes(raw_data)
             if message:
                 print(f"[DEBUG] Successfully parsed raw {message.type} message from {message.nickname}")
-                self.message_received.emit(message.nickname, message.type, message.data)
+                self.message_received.emit(message.nickname, message.type, message.data, "local")
                 return
         except Exception as e:
             print(f"[DEBUG] Raw message parsing failed: {e}")
@@ -86,6 +89,12 @@ class ChatWindow(QMainWindow):
         self.is_gateway_mode = False
         self.network_receiver = None
         self.peer_manager = PeerManager()
+        
+        # Gateway components
+        self.gateway_server = None
+        self.gateway_client = None
+        self.local_gateway_ip = get_local_ip()
+        self.message_cache = get_message_cache()
 
         self.init_ui()
         self.load_existing_keys()
@@ -111,6 +120,9 @@ class ChatWindow(QMainWindow):
 
         self.user_list = QListWidget()
         self.user_list.addItem("📡 Network Status: Disconnected")
+        self.user_list.addItem(f"🌐 Local IP: {self.local_gateway_ip}")
+        self.user_list.addItem("🔗 Gateway Status: Disabled")
+        self.user_list.addItem("🛡️ Cache: 0 messages")
 
         input_layout = QHBoxLayout()
         input_layout.addWidget(self.message_input)
@@ -208,6 +220,10 @@ class ChatWindow(QMainWindow):
             self.network_receiver.message_received.connect(self.on_message_received)
             self.network_receiver.start()
 
+            # Start gateway components if in gateway mode
+            if self.is_gateway_mode:
+                self.start_gateway_services()
+
             self.is_connected = True
             self.message_input.setEnabled(True)
             self.send_button.setEnabled(True)
@@ -218,11 +234,18 @@ class ChatWindow(QMainWindow):
 
             self.user_list.clear()
             self.user_list.addItem("📡 Network Status: Connected")
+            self.user_list.addItem(f"🌐 Local IP: {self.local_gateway_ip}")
+            if self.is_gateway_mode:
+                self.user_list.addItem("🔗 Gateway Status: Active")
+            else:
+                self.user_list.addItem("🔗 Gateway Status: Disabled")
             self.user_list.addItem(f"👤 {self.nickname} (Me)")
 
             self.send_join_message()
 
             self.chat_display.append(f"🌐 Connected to network as '{self.nickname}'")
+            if self.is_gateway_mode:
+                self.chat_display.append("🌐 Gateway mode active - relaying messages between subnets")
             self.chat_display.append("💡 You can now send and receive messages!")
 
         except Exception as e:
@@ -238,6 +261,9 @@ class ChatWindow(QMainWindow):
                 self.network_receiver.wait(3000)
                 self.network_receiver = None
 
+            # Stop gateway services
+            self.stop_gateway_services()
+
             self.is_connected = False
             self.nickname = None
             self.peer_manager.clear()
@@ -251,6 +277,8 @@ class ChatWindow(QMainWindow):
 
             self.user_list.clear()
             self.user_list.addItem("📡 Network Status: Disconnected")
+            self.user_list.addItem(f"🌐 Local IP: {self.local_gateway_ip}")
+            self.user_list.addItem("🔗 Gateway Status: Disabled")
             self.chat_display.append("🔌 Disconnected from network")
         except Exception as e:
             QMessageBox.critical(self, "Disconnect Error", f"Failed to disconnect cleanly: {e}")
@@ -276,12 +304,17 @@ class ChatWindow(QMainWindow):
                 print("[DEBUG] No peers in peer_manager.peers!")
                 return
             
-            # DEBUG: Show all peers
+            # Send to local peers
             for peer_id, peer_info in self.peer_manager.peers.items():
                 print(f"[DEBUG] Peer {peer_id[:8]}...: {peer_info['nickname']}")
                 pubkey_b64 = peer_info["public_key"]
                 print(f"[DEBUG] Sending to {peer_info['nickname']}, pubkey length: {len(pubkey_b64)}")
                 send_encrypted_message(msg, pubkey_b64)
+
+            # Forward to remote gateways if in gateway mode
+            if self.is_gateway_mode and self.gateway_client:
+                self.gateway_client.send_message_to_gateways(msg)
+                print("[GATEWAY] Message forwarded to remote gateways")
 
             timestamp = time.strftime("%H:%M:%S")
             self.chat_display.append(f"[{timestamp}] {self.nickname}: {message_text}")
@@ -304,6 +337,11 @@ class ChatWindow(QMainWindow):
             print("[DEBUG] Broadcasting JOIN as raw message (too large for RSA encryption)")
             self.chat_display.append("📡 Broadcasting JOIN message (raw - too large for encryption)")
             send_raw_message(msg)
+            
+            # Forward JOIN to remote gateways if in gateway mode
+            if self.is_gateway_mode and self.gateway_client:
+                self.gateway_client.send_message_to_gateways(msg)
+                print("[GATEWAY] JOIN message forwarded to remote gateways")
 
         except Exception as e:
             print(f"[ERROR] Failed to send join message: {e}")
@@ -314,13 +352,46 @@ class ChatWindow(QMainWindow):
             msg = ChatMessage("quit", self.nickname, "")
             for peer in self.peer_manager.peers.values():
                 send_encrypted_message(msg, peer["public_key"])
+                
+            # Forward QUIT to remote gateways if in gateway mode
+            if self.is_gateway_mode and self.gateway_client:
+                self.gateway_client.send_message_to_gateways(msg)
+                print("[GATEWAY] QUIT message forwarded to remote gateways")
         except Exception as e:
             print(f"Failed to send quit message: {e}")
 
-    def on_message_received(self, nickname, message_type, data):
+    def on_message_received(self, nickname, message_type, data, source="local"):
         timestamp = time.strftime("%H:%M:%S")
         
-        print(f"[DEBUG] Received {message_type} from {nickname}, data length: {len(data) if data else 0}")
+        print(f"[DEBUG] Received {message_type} from {nickname} via {source}, data length: {len(data) if data else 0}")
+        
+        # Create message object for processing
+        try:
+            if source == "local":
+                msg = ChatMessage(message_type, nickname, data)
+            else:
+                # For gateway messages, we need to reconstruct with potential TTL
+                msg = ChatMessage(message_type, nickname, data)
+                
+            # Check for duplicate messages (loop prevention)
+            if self.message_cache.is_message_seen(msg.msg_id):
+                print(f"[LOOP-PREVENT] Dropping duplicate {message_type} from {nickname} (ID: {msg.msg_id[:8]}...)")
+                return
+                
+            # Add message to cache
+            self.message_cache.add_message(msg.msg_id)
+            self.update_cache_counter()  # Update UI counter
+            
+            # Forward to remote gateways if this is a local message and we're in gateway mode
+            if source == "local" and self.is_gateway_mode and self.gateway_client:
+                # Only forward if the message is not from ourselves to prevent loops
+                if nickname != self.nickname:
+                    self.gateway_client.send_message_to_gateways(msg)
+                    print(f"[GATEWAY] Forwarded {message_type} from {nickname} to remote gateways")
+                    
+        except Exception as e:
+            print(f"[ERROR] Error processing message: {e}")
+            # Continue processing even if forwarding fails
 
         if message_type == "chat":
             if nickname != self.nickname:
@@ -372,11 +443,102 @@ class ChatWindow(QMainWindow):
                         break
 
 
+    def start_gateway_services(self):
+        """Start gateway server and client services"""
+        try:
+            # Start gateway server
+            self.gateway_server = GatewayServer()
+            self.gateway_server.message_received.connect(self.on_gateway_message_received)
+            self.gateway_server.start_server()
+            
+            # Start gateway client
+            self.gateway_client = GatewayClient(self.local_gateway_ip)
+            self.gateway_client.connection_status_changed.connect(self.on_gateway_connection_changed)
+            self.gateway_client.start_client()
+            
+            print(f"[GATEWAY] Services started on IP {self.local_gateway_ip}")
+            self.chat_display.append(f"🌐 Gateway services started on {self.local_gateway_ip}")
+            
+        except Exception as e:
+            print(f"[GATEWAY] Failed to start services: {e}")
+            self.chat_display.append(f"❌ Gateway services failed: {e}")
+            
+    def stop_gateway_services(self):
+        """Stop gateway server and client services"""
+        try:
+            if self.gateway_server:
+                self.gateway_server.stop_server()
+                self.gateway_server = None
+                
+            if self.gateway_client:
+                self.gateway_client.stop_client()
+                self.gateway_client = None
+                
+            print("[GATEWAY] Services stopped")
+            
+        except Exception as e:
+            print(f"[GATEWAY] Error stopping services: {e}")
+            
+    def on_gateway_message_received(self, nickname, message_type, data, source_gateway):
+        """Handle messages received from remote gateways"""
+        print(f"[GATEWAY] Received {message_type} from {nickname} via gateway {source_gateway}")
+        
+        # Process the message as if it came from local network (but mark source as gateway)
+        self.on_message_received(nickname, message_type, data, f"gateway:{source_gateway}")
+        
+        # Rebroadcast locally using the existing broadcast mechanism
+        try:
+            msg = ChatMessage(message_type, nickname, data)
+            
+            if message_type == "join":
+                # For JOIN messages, use raw broadcast (too large for encryption)
+                send_raw_message(msg)
+                self.chat_display.append(f"🌐 Relayed JOIN from {nickname} (via {source_gateway})")
+            else:
+                # For other messages, broadcast to local peers
+                for peer in self.peer_manager.peers.values():
+                    send_encrypted_message(msg, peer["public_key"])
+                self.chat_display.append(f"🌐 Relayed {message_type} from {nickname} (via {source_gateway})")
+                
+        except Exception as e:
+            print(f"[GATEWAY] Error relaying message: {e}")
+            
+    def on_gateway_connection_changed(self, gateway_ip, connected):
+        """Handle gateway connection status changes"""
+        status = "Connected" if connected else "Disconnected"
+        print(f"[GATEWAY] {status} to/from {gateway_ip}")
+        self.chat_display.append(f"🔗 Gateway {gateway_ip}: {status}")
+        
+    def update_cache_counter(self):
+        """Update the cache counter in the UI"""
+        if hasattr(self, 'message_cache'):
+            cache_stats = self.message_cache.get_cache_stats()
+            cache_text = f"🛡️ Cache: {cache_stats['total_messages']} messages"
+            
+            # Find and update the cache status line
+            for i in range(self.user_list.count()):
+                item = self.user_list.item(i)
+                if "🛡️ Cache:" in item.text():
+                    item.setText(cache_text)
+                    break
+
     def toggle_mode(self):
         self.is_gateway_mode = not self.is_gateway_mode
         mode = "Gateway" if self.is_gateway_mode else "Client"
         QMessageBox.information(self, "Mode Toggle", f"Switched to {mode} mode")
         self.chat_display.append(f"🔄 Switched to {mode} mode")
+        
+        # Update UI to reflect mode change
+        if self.is_connected:
+            # Update the gateway status in the user list
+            for i in range(self.user_list.count()):
+                item = self.user_list.item(i)
+                if "Gateway Status:" in item.text():
+                    if self.is_gateway_mode:
+                        item.setText("🔗 Gateway Status: Active")
+                    else:
+                        item.setText("🔗 Gateway Status: Disabled")
+                    break
 
     def show_about(self):
         QMessageBox.information(self, "About", "Barış Can Sertkaya \n20210702022\nCSE471")
@@ -384,18 +546,33 @@ class ChatWindow(QMainWindow):
     def show_debug_info(self):
         """Display debug information about current peer status"""
         peer_count = len(self.peer_manager.peers)
+        cache_stats = self.message_cache.get_cache_stats()
+        
         debug_info = f"""
 🔍 DEBUG INFORMATION:
 
 Connection Status: {'Connected' if self.is_connected else 'Disconnected'}
 Nickname: {self.nickname or 'None'}
 Mode: {'Gateway' if self.is_gateway_mode else 'Client'}
+Local IP: {self.local_gateway_ip}
 
 Peer Count: {peer_count}
+
+🛡️ Message Cache:
+  - Cached Messages: {cache_stats['total_messages']}
+  - Gateway Paths: {cache_stats['total_paths']}
+  - Cache Timeout: {cache_stats['cache_timeout']}s
+  - Cleanup Running: {cache_stats['running']}
         """
         
+        if self.is_gateway_mode and self.gateway_client:
+            connected_gateways = self.gateway_client.get_connected_gateways()
+            debug_info += f"\n🌐 Gateway Connections: {len(connected_gateways)}\n"
+            for gw in connected_gateways:
+                debug_info += f"  - {gw}\n"
+        
         if peer_count > 0:
-            debug_info += "\nKnown Peers:\n"
+            debug_info += "\n👥 Known Peers:\n"
             for peer_id, peer_info in self.peer_manager.peers.items():
                 debug_info += f"  - {peer_info['nickname']} (ID: {peer_id[:8]}...)\n"
                 debug_info += f"    Public Key Length: {len(peer_info['public_key'])} chars\n"
