@@ -483,25 +483,66 @@ class ChatWindow(QMainWindow):
         """Handle messages received from remote gateways"""
         print(f"[GATEWAY] Received {message_type} from {nickname} via gateway {source_gateway}")
         
-        # Process the message as if it came from local network (but mark source as gateway)
-        self.on_message_received(nickname, message_type, data, f"gateway:{source_gateway}")
-        
-        # Rebroadcast locally using the existing broadcast mechanism
+        # Create message object for processing
         try:
             msg = ChatMessage(message_type, nickname, data)
             
+            # Check for duplicate messages (loop prevention)
+            if self.message_cache.is_message_seen(msg.msg_id):
+                print(f"[GATEWAY] Dropping duplicate {message_type} from {nickname} (ID: {msg.msg_id[:8]}...)")
+                return
+                
+            # Add message to cache
+            self.message_cache.add_message(msg.msg_id)
+            self.update_cache_counter()
+            
+            # Process the message directly (don't call on_message_received to avoid double processing)
+            timestamp = time.strftime("%H:%M:%S")
+            
+            if message_type == "chat":
+                if nickname != self.nickname:
+                    self.chat_display.append(f"[{timestamp}] {nickname}: {data}")
+
+            elif message_type == "join":
+                if nickname != self.nickname:
+                    # Check if we already know this peer
+                    is_new_peer = not self.peer_manager.peer_exists(data)
+
+                    if is_new_peer:
+                        print(f"[GATEWAY] Processing JOIN from new peer: {nickname}")
+                        self.chat_display.append(f"[{timestamp}] 👋 {nickname} joined the chat (via gateway)")
+                        
+                        # Add the new peer
+                        self.peer_manager.add_peer(nickname, data)
+
+                        # Update UI list
+                        user_items = [self.user_list.item(i).text() for i in range(self.user_list.count())]
+                        user_entry = f"👤 {nickname}"
+                        if user_entry not in user_items:
+                            self.user_list.addItem(user_entry)
+
+            elif message_type == "quit":
+                if nickname != self.nickname:
+                    self.chat_display.append(f"[{timestamp}] 👋 {nickname} left the chat (via gateway)")
+                    self.peer_manager.remove_peer(nickname)
+                    for i in range(self.user_list.count()):
+                        if f"👤 {nickname}" in self.user_list.item(i).text():
+                            self.user_list.takeItem(i)
+                            break
+            
+            # Rebroadcast locally using the existing broadcast mechanism
             if message_type == "join":
                 # For JOIN messages, use raw broadcast (too large for encryption)
                 send_raw_message(msg)
-                self.chat_display.append(f"🌐 Relayed JOIN from {nickname} (via {source_gateway})")
+                print(f"[GATEWAY] Relayed JOIN from {nickname} locally")
             else:
                 # For other messages, broadcast to local peers
                 for peer in self.peer_manager.peers.values():
                     send_encrypted_message(msg, peer["public_key"])
-                self.chat_display.append(f"🌐 Relayed {message_type} from {nickname} (via {source_gateway})")
+                print(f"[GATEWAY] Relayed {message_type} from {nickname} locally")
                 
         except Exception as e:
-            print(f"[GATEWAY] Error relaying message: {e}")
+            print(f"[GATEWAY] Error processing gateway message: {e}")
             
     def on_gateway_connection_changed(self, gateway_ip, connected):
         """Handle gateway connection status changes"""
