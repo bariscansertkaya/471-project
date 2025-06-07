@@ -7,7 +7,7 @@ from message import ChatMessage
 from multipart_message import MultipartMessageSender, MessageFragment
 
 # --- Settings ---
-INTERFACE = "en0"  # Change this to your active network interface
+INTERFACE = "bridge100"  # Change this to your active network interface
 BROADCAST_MAC = "ff:ff:ff:ff:ff:ff"
 DEST_IP = "255.255.255.255"
 DEST_PORT = 42069  # Arbitrary UDP port
