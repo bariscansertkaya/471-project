@@ -256,7 +256,7 @@ class ChatWindow(QMainWindow):
             
             # Check message size and inform user
             message_size = len(msg.to_json().encode('utf-8'))
-            if message_size > 245:
+            if message_size > 180:
                 self.chat_display.append(f"📦 Large message detected ({message_size} bytes) - using multi-part encryption")
             
             # DEBUG: Show all peers and send using auto-routing

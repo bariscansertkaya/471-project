@@ -106,13 +106,13 @@ def send_encrypted_message(msg: ChatMessage, recipient_pubkey_b64: str):
         print(f"[ERROR] Content: {recipient_pubkey_b64[:100]}...")
         return
     
-    # Check message size - RSA 2048 can only encrypt ~245 bytes max
+    # Check message size - RSA 2048 can only encrypt ~180 bytes max with OAEP padding
     message_json = msg.to_json()
     message_size = len(message_json.encode('utf-8'))
     print(f"[DEBUG] Message JSON size: {message_size} bytes")
     
-    if message_size > 245:
-        print(f"[WARNING] Message too large for direct RSA encryption: {message_size} bytes > 245 byte limit")
+    if message_size > 180:
+        print(f"[WARNING] Message too large for direct RSA encryption: {message_size} bytes > 180 byte limit")
         print("[INFO] Switching to large message protocol...")
         return send_large_encrypted_message(msg, recipient_pubkey_b64)
     
@@ -182,7 +182,7 @@ def send_message_auto(msg: ChatMessage, recipient_pubkey_b64: str = None):
     
     if recipient_pubkey_b64:
         # Encrypted message
-        if message_size <= 245:
+        if message_size <= 180:
             print(f"[INFO] Sending small encrypted message ({message_size} bytes)")
             send_encrypted_message(msg, recipient_pubkey_b64)
         else:

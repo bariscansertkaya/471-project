@@ -46,15 +46,30 @@ def load_keys():
 
 
 def encrypt_message(public_key, message: str) -> bytes:
-    """Encrypt a message using a public RSA key."""
-    return public_key.encrypt(
-        message.encode(),
-        padding.OAEP(
-            mgf=padding.MGF1(algorithm=hashes.SHA256()),
-            algorithm=hashes.SHA256(),
-            label=None
+    """
+    Encrypt a message using a public RSA key.
+    Raises ValueError if message is too large for RSA encryption.
+    """
+    message_bytes = message.encode('utf-8')
+    
+    # RSA 2048 with OAEP padding can encrypt at most 190 bytes
+    # We use 180 as a safe limit to account for padding overhead
+    max_rsa_size = 180
+    
+    if len(message_bytes) > max_rsa_size:
+        raise ValueError(f"Message too large for RSA encryption: {len(message_bytes)} bytes > {max_rsa_size} byte limit. Use hybrid encryption instead.")
+    
+    try:
+        return public_key.encrypt(
+            message_bytes,
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
         )
-    )
+    except Exception as e:
+        raise ValueError(f"RSA encryption failed: {e}")
 
 
 def decrypt_message(private_key, ciphertext: bytes) -> str:
