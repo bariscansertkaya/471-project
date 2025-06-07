@@ -1,0 +1,16 @@
+2025-06-07 03:18:31,583 - GatewayErrorHandler - INFO - Registered recovery handler for network_test_error
+2025-06-07 03:18:31,583 - GatewayErrorHandler - WARNING - [network_test_error_1749255511] NETWORK - MEDIUM - test_error: Test error with recovery
+2025-06-07 03:18:31,583 - GatewayErrorHandler - INFO - [network_test_error_1749255511] Attempting automatic recovery...
+2025-06-07 03:18:31,584 - GatewayErrorHandler - INFO - [network_test_error_1749255511] Automatic recovery successful
+2025-06-07 03:19:26,089 - GatewayErrorHandler - INFO - Registered recovery handler for network_test_error
+2025-06-07 03:19:26,089 - GatewayErrorHandler - WARNING - [network_test_error_1749255566] NETWORK - MEDIUM - test_error: Test error with recovery
+2025-06-07 03:19:26,089 - GatewayErrorHandler - INFO - [network_test_error_1749255566] Attempting automatic recovery...
+2025-06-07 03:19:26,089 - GatewayErrorHandler - INFO - [network_test_error_1749255566] Automatic recovery successful
+2025-06-07 03:19:54,009 - GatewayErrorHandler - INFO - Registered recovery handler for network_test_error
+2025-06-07 03:19:54,009 - GatewayErrorHandler - WARNING - [network_test_error_1749255594] NETWORK - MEDIUM - test_error: Test error with recovery
+2025-06-07 03:19:54,009 - GatewayErrorHandler - INFO - [network_test_error_1749255594] Attempting automatic recovery...
+2025-06-07 03:19:54,009 - GatewayErrorHandler - INFO - [network_test_error_1749255594] Automatic recovery successful
+2025-06-07 03:23:03,247 - GatewayErrorHandler - INFO - Registered recovery handler for network_test_error
+2025-06-07 03:23:03,248 - GatewayErrorHandler - WARNING - [network_test_error_1749255783] NETWORK - MEDIUM - test_error: Test error with recovery
+2025-06-07 03:23:03,248 - GatewayErrorHandler - INFO - [network_test_error_1749255783] Attempting automatic recovery...
+2025-06-07 03:23:03,248 - GatewayErrorHandler - INFO - [network_test_error_1749255783] Automatic recovery successful
