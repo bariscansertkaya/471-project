@@ -1,7 +1,10 @@
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import base64
 import os
+import secrets
 
 KEY_DIR = "keys"
 PRIVATE_KEY_FILE = os.path.join(KEY_DIR, "privkey.pem")
@@ -64,6 +67,76 @@ def decrypt_message(private_key, ciphertext: bytes) -> str:
             label=None
         )
     ).decode()
+
+
+def generate_aes_key() -> bytes:
+    """Generate a random 256-bit AES key."""
+    return secrets.token_bytes(32)
+
+
+def encrypt_large_message(public_key, message: str) -> tuple[bytes, bytes]:
+    """
+    Encrypt a large message using hybrid encryption (AES + RSA).
+    Returns: (encrypted_aes_key, encrypted_data)
+    """
+    # Generate random AES key
+    aes_key = generate_aes_key()
+    
+    # Generate random IV for AES
+    iv = secrets.token_bytes(16)
+    
+    # Encrypt the message with AES
+    cipher = Cipher(algorithms.AES(aes_key), modes.CBC(iv))
+    encryptor = cipher.encryptor()
+    
+    # Pad message to be multiple of 16 bytes (AES block size)
+    message_bytes = message.encode('utf-8')
+    padding_length = 16 - (len(message_bytes) % 16)
+    padded_message = message_bytes + bytes([padding_length] * padding_length)
+    
+    encrypted_data = iv + encryptor.update(padded_message) + encryptor.finalize()
+    
+    # Encrypt the AES key with RSA
+    encrypted_aes_key = public_key.encrypt(
+        aes_key,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+    
+    return encrypted_aes_key, encrypted_data
+
+
+def decrypt_large_message(private_key, encrypted_aes_key: bytes, encrypted_data: bytes) -> str:
+    """
+    Decrypt a large message using hybrid encryption (AES + RSA).
+    """
+    # Decrypt the AES key with RSA
+    aes_key = private_key.decrypt(
+        encrypted_aes_key,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+    
+    # Extract IV and encrypted message
+    iv = encrypted_data[:16]
+    ciphertext = encrypted_data[16:]
+    
+    # Decrypt the message with AES
+    cipher = Cipher(algorithms.AES(aes_key), modes.CBC(iv))
+    decryptor = cipher.decryptor()
+    padded_message = decryptor.update(ciphertext) + decryptor.finalize()
+    
+    # Remove padding
+    padding_length = padded_message[-1]
+    message = padded_message[:-padding_length]
+    
+    return message.decode('utf-8')
 
 
 def export_public_key_base64(public_key) -> str:

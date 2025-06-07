@@ -12,8 +12,8 @@ from scapy.all import sniff, Raw
 
 from crypto_utils import generate_key_pair, load_keys, export_public_key_base64
 from message import ChatMessage
-from packet_sender import send_encrypted_message, send_raw_message
-from packet_receiver import INTERFACE, DEST_PORT
+from packet_sender import send_encrypted_message, send_raw_message, send_message_auto, send_large_encrypted_message
+from packet_receiver import INTERFACE, DEST_PORT, FRAGMENT_PORT, PacketReceiver
 from peer_manager import PeerManager
 
 
@@ -24,53 +24,31 @@ class NetworkReceiver(QThread):
         super().__init__()
         self.private_key = private_key
         self.running = False
+        self.packet_receiver = None
 
-    def handle_packet(self, packet):
-        if not packet.haslayer(Raw):
-            return
-        
-        raw_data = packet[Raw].load
-        print(f"[DEBUG] NetworkReceiver: Received packet with {len(raw_data)} bytes")
-        
-        # Try encrypted message first
-        try:
-            print("[DEBUG] Attempting to decrypt message...")
-            message = ChatMessage.decrypt(raw_data, self.private_key)
-            if message:
-                print(f"[DEBUG] Successfully decrypted {message.type} message from {message.nickname}")
-                self.message_received.emit(message.nickname, message.type, message.data)
-                return
-        except Exception as e:
-            print(f"[DEBUG] Decryption failed (this is normal for raw messages): {e}")
-
-        # Try raw message
-        try:
-            print("[DEBUG] Attempting to parse as raw message...")
-            message = ChatMessage.from_bytes(raw_data)
-            if message:
-                print(f"[DEBUG] Successfully parsed raw {message.type} message from {message.nickname}")
-                self.message_received.emit(message.nickname, message.type, message.data)
-                return
-        except Exception as e:
-            print(f"[DEBUG] Raw message parsing failed: {e}")
-            
-        print("[DEBUG] Packet could not be parsed as either encrypted or raw message")
+    def message_callback(self, nickname, msg_type, data):
+        """Callback function for when a complete message is received."""
+        self.message_received.emit(nickname, msg_type, data)
 
     def run(self):
         self.running = True
         try:
-            sniff(
-                iface=INTERFACE,
-                prn=self.handle_packet,
-                filter=f"udp port {DEST_PORT}",
-                stop_filter=lambda x: not self.running,
-                store=False
-            )
+            # Use the new PacketReceiver class
+            self.packet_receiver = PacketReceiver(self.private_key, self.message_callback)
+            self.packet_receiver.start_sniffing()
         except Exception as e:
             print(f"[!] Network receiver error: {e}")
 
     def stop(self):
         self.running = False
+        if self.packet_receiver:
+            self.packet_receiver.stop()
+
+    def get_assembler_status(self):
+        """Get status of pending multi-part messages."""
+        if self.packet_receiver:
+            return self.packet_receiver.get_assembler_status()
+        return {}
 
 
 class ChatWindow(QMainWindow):
@@ -276,15 +254,33 @@ class ChatWindow(QMainWindow):
                 print("[DEBUG] No peers in peer_manager.peers!")
                 return
             
-            # DEBUG: Show all peers
+            # Check message size and inform user
+            message_size = len(msg.to_json().encode('utf-8'))
+            if message_size > 245:
+                self.chat_display.append(f"📦 Large message detected ({message_size} bytes) - using multi-part encryption")
+            
+            # DEBUG: Show all peers and send using auto-routing
+            successful_sends = 0
             for peer_id, peer_info in self.peer_manager.peers.items():
                 print(f"[DEBUG] Peer {peer_id[:8]}...: {peer_info['nickname']}")
                 pubkey_b64 = peer_info["public_key"]
                 print(f"[DEBUG] Sending to {peer_info['nickname']}, pubkey length: {len(pubkey_b64)}")
-                send_encrypted_message(msg, pubkey_b64)
+                
+                # Use auto-routing to choose appropriate sending method
+                try:
+                    send_message_auto(msg, pubkey_b64)
+                    successful_sends += 1
+                except Exception as e:
+                    print(f"[ERROR] Failed to send to {peer_info['nickname']}: {e}")
+                    self.chat_display.append(f"❌ Failed to send to {peer_info['nickname']}: {e}")
 
             timestamp = time.strftime("%H:%M:%S")
-            self.chat_display.append(f"[{timestamp}] {self.nickname}: {message_text}")
+            if successful_sends > 0:
+                self.chat_display.append(f"[{timestamp}] {self.nickname}: {message_text}")
+                self.chat_display.append(f"📤 Message sent to {successful_sends}/{peer_count} peers")
+            else:
+                self.chat_display.append(f"❌ Failed to send message to any peers")
+            
             self.message_input.clear()
 
         except Exception as e:
@@ -299,11 +295,10 @@ class ChatWindow(QMainWindow):
             print(f"[DEBUG] Sending JOIN message, my pubkey length: {len(public_key_b64)}")
             self.chat_display.append(f"🔍 DEBUG: Sending JOIN with pubkey length {len(public_key_b64)}")
 
-            # JOIN messages are too large for RSA encryption (~604 chars > 245 byte limit)
-            # So we always send them as raw broadcasts for peer discovery
-            print("[DEBUG] Broadcasting JOIN as raw message (too large for RSA encryption)")
-            self.chat_display.append("📡 Broadcasting JOIN message (raw - too large for encryption)")
-            send_raw_message(msg)
+            # JOIN messages are broadcast without encryption for peer discovery
+            print("[DEBUG] Broadcasting JOIN as raw message for peer discovery")
+            self.chat_display.append("📡 Broadcasting JOIN message (raw - for peer discovery)")
+            send_message_auto(msg)  # No recipient key = raw broadcast
 
         except Exception as e:
             print(f"[ERROR] Failed to send join message: {e}")
@@ -313,7 +308,7 @@ class ChatWindow(QMainWindow):
         try:
             msg = ChatMessage("quit", self.nickname, "")
             for peer in self.peer_manager.peers.values():
-                send_encrypted_message(msg, peer["public_key"])
+                send_message_auto(msg, peer["public_key"])
         except Exception as e:
             print(f"Failed to send quit message: {e}")
 
@@ -401,6 +396,17 @@ Peer Count: {peer_count}
                 debug_info += f"    Public Key Length: {len(peer_info['public_key'])} chars\n"
         else:
             debug_info += "\nNo peers known.\n"
+        
+        # Add multi-part message assembler status
+        if self.network_receiver and self.is_connected:
+            assembler_status = self.network_receiver.get_assembler_status()
+            if assembler_status:
+                debug_info += "\nPending Multi-part Messages:\n"
+                for msg_id, status in assembler_status.items():
+                    debug_info += f"  - Message {msg_id}: {status['fragments_received']}/{status['total_fragments']} fragments"
+                    debug_info += f" (age: {status['age_seconds']}s)\n"
+            else:
+                debug_info += "\nNo pending multi-part messages.\n"
             
         self.chat_display.append(debug_info)
         print(debug_info)
