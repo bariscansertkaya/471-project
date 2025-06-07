@@ -45,7 +45,7 @@ def test_large_message():
     print(f"Original message size: {len(large_msg.to_json().encode('utf-8'))} bytes")
     
     # Create multipart sender and assembler
-    sender = MultipartMessageSender(max_fragment_size=1024)
+    sender = MultipartMessageSender(max_fragment_size=400)
     assembler = MultipartMessageAssembler(private_key)
     
     # Split message into fragments
@@ -90,7 +90,7 @@ def test_out_of_order_fragments():
     print(f"Original message size: {len(large_msg.to_json().encode('utf-8'))} bytes")
     
     # Create multipart sender and assembler
-    sender = MultipartMessageSender(max_fragment_size=512)
+    sender = MultipartMessageSender(max_fragment_size=400)
     assembler = MultipartMessageAssembler(private_key)
     
     # Split message into fragments
@@ -137,7 +137,7 @@ def test_missing_fragments():
     
     # Create assembler with short timeout
     assembler = MultipartMessageAssembler(private_key, timeout_seconds=5)
-    sender = MultipartMessageSender(max_fragment_size=512)
+    sender = MultipartMessageSender(max_fragment_size=400)
     
     # Split message into fragments
     fragments = sender.create_fragments(large_msg, public_key_b64)

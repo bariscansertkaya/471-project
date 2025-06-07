@@ -21,7 +21,7 @@ def generate_fake_ip():
     return "{}.{}.{}.{}".format(*[random.randint(1, 254) for _ in range(4)])
 
 # --- Multi-part Message Sender ---
-multipart_sender = MultipartMessageSender(max_fragment_size=1024)
+multipart_sender = MultipartMessageSender(max_fragment_size=400)
 
 def send_large_encrypted_message(msg: ChatMessage, recipient_pubkey_b64: str, delay_ms: int = 50):
     """

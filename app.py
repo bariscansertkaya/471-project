@@ -63,7 +63,7 @@ class ChatWindow(QMainWindow):
         self.is_connected = False
         self.is_gateway_mode = False
         self.network_receiver = None
-        self.peer_manager = PeerManager()
+        self.peer_manager = PeerManager(peer_timeout_seconds=300, inactive_callback=self.handle_inactive_peer)
 
         self.init_ui()
         self.load_existing_keys()
@@ -307,15 +307,37 @@ class ChatWindow(QMainWindow):
     def send_quit_message(self):
         try:
             msg = ChatMessage("quit", self.nickname, "")
-            for peer in self.peer_manager.peers.values():
-                send_message_auto(msg, peer["public_key"])
+            peer_count = len(self.peer_manager.peers)
+            print(f"[DEBUG] Sending QUIT message to {peer_count} peers")
+            self.chat_display.append(f"📤 Sending quit notification to {peer_count} peers...")
+            
+            successful_quits = 0
+            for peer_id, peer_info in self.peer_manager.peers.items():
+                try:
+                    print(f"[DEBUG] Sending QUIT to {peer_info['nickname']}")
+                    send_message_auto(msg, peer_info["public_key"])
+                    successful_quits += 1
+                except Exception as e:
+                    print(f"[ERROR] Failed to send quit to {peer_info['nickname']}: {e}")
+            
+            print(f"[DEBUG] Successfully sent QUIT to {successful_quits}/{peer_count} peers")
+            if successful_quits < peer_count:
+                self.chat_display.append(f"⚠️ Quit notification sent to {successful_quits}/{peer_count} peers")
+            else:
+                self.chat_display.append(f"✅ Quit notification sent to all peers")
+                
         except Exception as e:
-            print(f"Failed to send quit message: {e}")
+            print(f"[ERROR] Failed to send quit message: {e}")
+            self.chat_display.append(f"❌ Failed to send quit notification: {e}")
 
     def on_message_received(self, nickname, message_type, data):
         timestamp = time.strftime("%H:%M:%S")
         
         print(f"[DEBUG] Received {message_type} from {nickname}, data length: {len(data) if data else 0}")
+
+        # Update peer activity for any message (except our own)
+        if nickname != self.nickname:
+            self.peer_manager.update_peer_activity(nickname)
 
         if message_type == "chat":
             if nickname != self.nickname:
@@ -345,7 +367,7 @@ class ChatWindow(QMainWindow):
                         response_msg = ChatMessage("join", self.nickname, my_key_b64)
                         print(f"[DEBUG] Sending JOIN response for {nickname} as broadcast")
                         self.chat_display.append(f"📡 Broadcasting JOIN response for {nickname}")
-                        send_raw_message(response_msg)
+                        send_message_auto(response_msg)  # Use auto-routing for consistency
                     except Exception as e:
                         print(f"[ERROR] Failed to send JOIN response: {e}")
                 else:
@@ -360,11 +382,7 @@ class ChatWindow(QMainWindow):
         elif message_type == "quit":
             if nickname != self.nickname:
                 self.chat_display.append(f"[{timestamp}] 👋 {nickname} left the chat")
-                self.peer_manager.remove_peer(nickname)
-                for i in range(self.user_list.count()):
-                    if f"👤 {nickname}" in self.user_list.item(i).text():
-                        self.user_list.takeItem(i)
-                        break
+                self.handle_peer_disconnect(nickname)
 
 
     def toggle_mode(self):
@@ -410,6 +428,33 @@ Peer Count: {peer_count}
             
         self.chat_display.append(debug_info)
         print(debug_info)
+
+    def handle_peer_disconnect(self, nickname):
+        """Handle a peer disconnecting (either via quit message or timeout)."""
+        print(f"[DEBUG] Handling disconnect for peer: {nickname}")
+        
+        # Remove from peer manager
+        self.peer_manager.remove_peer(nickname)
+        
+        # Remove from UI list
+        for i in range(self.user_list.count()):
+            if f"👤 {nickname}" in self.user_list.item(i).text():
+                self.user_list.takeItem(i)
+                print(f"[DEBUG] Removed {nickname} from UI list")
+                break
+
+    def handle_inactive_peer(self, nickname):
+        """Handle a peer that has become inactive (timeout)."""
+        timestamp = time.strftime("%H:%M:%S")
+        print(f"[DEBUG] Peer {nickname} has become inactive")
+        self.chat_display.append(f"[{timestamp}] ⏰ {nickname} timed out (inactive)")
+        
+        # Remove from UI list
+        for i in range(self.user_list.count()):
+            if f"👤 {nickname}" in self.user_list.item(i).text():
+                self.user_list.takeItem(i)
+                print(f"[DEBUG] Removed inactive peer {nickname} from UI list")
+                break
 
     def closeEvent(self, event):
         if self.is_connected:

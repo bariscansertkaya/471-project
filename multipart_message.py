@@ -2,6 +2,7 @@ import uuid
 import time
 import json
 import threading
+import base64
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from crypto_utils import encrypt_large_message, decrypt_large_message, import_public_key_base64
@@ -25,8 +26,8 @@ class MessageFragment:
             "message_id": self.message_id,
             "fragment_id": self.fragment_id,
             "total_fragments": self.total_fragments,
-            "encrypted_aes_key": self.encrypted_aes_key.hex() if self.encrypted_aes_key else "",
-            "encrypted_data": self.encrypted_data.hex(),
+            "encrypted_aes_key": base64.b64encode(self.encrypted_aes_key).decode('utf-8') if self.encrypted_aes_key else "",
+            "encrypted_data": base64.b64encode(self.encrypted_data).decode('utf-8'),
             "timestamp": self.timestamp,
             "sender": self.sender,
             "message_type": self.message_type
@@ -38,6 +39,10 @@ class MessageFragment:
     def to_bytes(self) -> bytes:
         return self.to_json().encode("utf-8")
 
+    def get_serialized_size(self) -> int:
+        """Get the size of this fragment when serialized."""
+        return len(self.to_bytes())
+
     @staticmethod
     def from_bytes(data: bytes) -> Optional['MessageFragment']:
         try:
@@ -46,8 +51,8 @@ class MessageFragment:
                 message_id=obj["message_id"],
                 fragment_id=obj["fragment_id"],
                 total_fragments=obj["total_fragments"],
-                encrypted_aes_key=bytes.fromhex(obj["encrypted_aes_key"]) if obj["encrypted_aes_key"] else b"",
-                encrypted_data=bytes.fromhex(obj["encrypted_data"]),
+                encrypted_aes_key=base64.b64decode(obj["encrypted_aes_key"].encode('utf-8')) if obj["encrypted_aes_key"] else b"",
+                encrypted_data=base64.b64decode(obj["encrypted_data"].encode('utf-8')),
                 timestamp=obj["timestamp"],
                 sender=obj["sender"],
                 message_type=obj["message_type"]
@@ -165,10 +170,11 @@ class MultipartMessageAssembler:
 class MultipartMessageSender:
     """Handles splitting and sending large messages."""
     
-    def __init__(self, max_fragment_size: int = 1024):
+    def __init__(self, max_fragment_size: int = 400):
         """
         Initialize sender.
         max_fragment_size: Maximum size of each fragment's encrypted data in bytes
+        Note: Keep this small to account for JSON serialization overhead (~2-3x expansion)
         """
         self.max_fragment_size = max_fragment_size
 
@@ -214,6 +220,13 @@ class MultipartMessageSender:
                 message_type=message.type
             )
             
+            # Check serialized size
+            serialized_size = fragment.get_serialized_size()
+            if serialized_size > 1400:  # Safe UDP size limit
+                print(f"[WARNING] Fragment {i+1} is too large: {serialized_size} bytes")
+                raise ValueError(f"Fragment too large for UDP: {serialized_size} bytes > 1400 byte limit")
+            
+            print(f"[DEBUG] Fragment {i+1} serialized size: {serialized_size} bytes")
             fragments.append(fragment)
         
         return fragments 
