@@ -8,7 +8,7 @@ from peer_manager import PeerManager
 import base64
 
 # --- Settings ---
-INTERFACE = "bridge100"  # Change to your network interface
+INTERFACE = "en0"  # Change to your network interface
 DEST_PORT = 42069  # Must match sender for regular messages
 FRAGMENT_PORT = 42070  # Must match sender for fragment messages
 

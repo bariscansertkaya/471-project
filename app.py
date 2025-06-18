@@ -206,10 +206,14 @@ class ChatWindow(QMainWindow):
             
             # Start periodic peer announcement (every 2 minutes)
             self.start_periodic_announcement()
+            
+            # Start active peer discovery
+            self.start_peer_discovery()
 
             self.chat_display.append(f"🌐 Connected to network as '{self.nickname}'")
             self.chat_display.append("💡 You can now send and receive messages!")
             self.chat_display.append("🔄 Periodic peer announcements enabled for better discovery")
+            self.chat_display.append("🔍 Active peer discovery initiated")
 
         except Exception as e:
             QMessageBox.critical(self, "Connection Error", f"Failed to connect: {e}")
@@ -307,7 +311,7 @@ class ChatWindow(QMainWindow):
             self.chat_display.append(f"🔍 DEBUG: Sending JOIN with pubkey length {len(public_key_b64)}")
 
             # JOIN messages are broadcast without encryption for peer discovery
-            print("[DEBUG] Broadcasting JOIN as raw message for peer discovery")
+            print("[DEBUG] Broadcasting JOIN message (raw - for peer discovery)")
             self.chat_display.append("📡 Broadcasting JOIN message (raw - for peer discovery)")
             
             # Send JOIN message multiple times with delays to improve reliability
@@ -361,69 +365,105 @@ class ChatWindow(QMainWindow):
         
         print(f"[DEBUG] Received {message_type} from {nickname}, data length: {len(data) if data else 0}")
 
-        # Update peer activity for any message (except our own)
-        if nickname != self.nickname:
-            self.peer_manager.update_peer_activity(nickname)
+        # Skip processing our own messages
+        if nickname == self.nickname:
+            print(f"[DEBUG] Ignoring message from self: {nickname}")
+            return
 
+        # Update peer activity for any message (except our own)
+        self.peer_manager.update_peer_activity(nickname)
+
+        # Check if this is an unknown peer (for any message type)
+        is_known_peer = any(peer_info["nickname"] == nickname for peer_info in self.peer_manager.peers.values())
+        
         if message_type == "chat":
-            if nickname != self.nickname:
-                self.chat_display.append(f"[{timestamp}] {nickname}: {data}")
+            self.chat_display.append(f"[{timestamp}] {nickname}: {data}")
+            
+            # If we received a chat message from an unknown peer, request their info
+            if not is_known_peer:
+                print(f"[DEBUG] Received chat from unknown peer: {nickname}")
+                self.chat_display.append(f"[{timestamp}] 🔍 Discovered new peer: {nickname} (requesting peer info)")
+                
+                # Send a JOIN message to announce ourselves and prompt them to respond
+                self.request_peer_info(nickname)
 
         elif message_type == "join":
-            if nickname != self.nickname:
-                # Check if we already know this peer by their public key (which is in `data`)
-                is_new_peer = not self.peer_manager.peer_exists(data)
+            # Check if we already know this peer by their public key (which is in `data`)
+            is_new_peer = not self.peer_manager.peer_exists(data)
 
-                if is_new_peer:
-                    print(f"[DEBUG] Processing JOIN from new peer: {nickname}")
-                    self.chat_display.append(f"[{timestamp}] 👋 {nickname} joined the chat")
+            if is_new_peer:
+                print(f"[DEBUG] Processing JOIN from new peer: {nickname}")
+                self.chat_display.append(f"[{timestamp}] 👋 {nickname} joined the chat")
+                
+                # Add the new peer
+                self.peer_manager.add_peer(nickname, data)
+
+                # Update UI list
+                self.add_peer_to_ui(nickname)
+
+                # Send my info back as a broadcast so the new peer can discover me
+                # Add a small delay to ensure the new peer has time to start listening
+                try:
+                    my_key_b64 = export_public_key_base64(self.public_key)
+                    response_msg = ChatMessage("join", self.nickname, my_key_b64)
+                    print(f"[DEBUG] Sending JOIN response for {nickname} as broadcast (with 100ms delay)")
+                    self.chat_display.append(f"📡 Broadcasting JOIN response for {nickname} (delayed)")
                     
-                    # Add the new peer
-                    self.peer_manager.add_peer(nickname, data)
-
-                    # Update UI list
-                    user_items = [self.user_list.item(i).text() for i in range(self.user_list.count())]
-                    user_entry = f"👤 {nickname}"
-                    if user_entry not in user_items:
-                        self.user_list.addItem(user_entry)
-
-                    # Send my info back as a broadcast so the new peer can discover me
-                    # Add a small delay to ensure the new peer has time to start listening
-                    try:
-                        my_key_b64 = export_public_key_base64(self.public_key)
-                        response_msg = ChatMessage("join", self.nickname, my_key_b64)
-                        print(f"[DEBUG] Sending JOIN response for {nickname} as broadcast (with 100ms delay)")
-                        self.chat_display.append(f"📡 Broadcasting JOIN response for {nickname} (delayed)")
-                        
-                        # Small delay to ensure new peer is ready to receive
-                        def delayed_response():
-                            time.sleep(0.1)  # 100ms delay
-                            try:
-                                send_message_auto(response_msg)
-                                print(f"[DEBUG] JOIN response sent successfully to help {nickname} discover me")
-                            except Exception as e:
-                                print(f"[ERROR] Failed to send delayed JOIN response: {e}")
-                        
-                        # Send response in background thread to avoid blocking UI
-                        response_thread = threading.Thread(target=delayed_response, daemon=True)
-                        response_thread.start()
-                        
-                    except Exception as e:
-                        print(f"[ERROR] Failed to prepare JOIN response: {e}")
-                else:
-                    # This is a JOIN from a known peer. Ignore it to prevent a loop.
-                    print(f"[DEBUG] Ignoring duplicate JOIN from known peer: {nickname}")
-                    # As a safeguard, ensure they're on the UI list in case they were removed by mistake
-                    user_items = [self.user_list.item(i).text() for i in range(self.user_list.count())]
-                    user_entry = f"👤 {nickname}"
-                    if user_entry not in user_items:
-                        self.user_list.addItem(user_entry)
+                    # Small delay to ensure new peer is ready to receive
+                    def delayed_response():
+                        time.sleep(0.1)  # 100ms delay
+                        try:
+                            send_message_auto(response_msg)
+                            print(f"[DEBUG] JOIN response sent successfully to help {nickname} discover me")
+                        except Exception as e:
+                            print(f"[ERROR] Failed to send delayed JOIN response: {e}")
+                    
+                    # Send response in background thread to avoid blocking UI
+                    response_thread = threading.Thread(target=delayed_response, daemon=True)
+                    response_thread.start()
+                    
+                except Exception as e:
+                    print(f"[ERROR] Failed to prepare JOIN response: {e}")
+            else:
+                # This is a JOIN from a known peer. Update their info and ensure UI consistency
+                print(f"[DEBUG] Received JOIN from known peer: {nickname}, updating info")
+                self.peer_manager.add_peer(nickname, data)  # Update their public key and last_seen
+                self.add_peer_to_ui(nickname)  # Ensure they're in the UI list
 
         elif message_type == "quit":
-            if nickname != self.nickname:
-                self.chat_display.append(f"[{timestamp}] 👋 {nickname} left the chat")
-                self.handle_peer_disconnect(nickname)
+            self.chat_display.append(f"[{timestamp}] 👋 {nickname} left the chat")
+            self.handle_peer_disconnect(nickname)
 
+        # For any message from an unknown peer, log the discovery
+        if not is_known_peer and message_type != "join":
+            print(f"[DEBUG] Message from unknown peer {nickname} - peer discovery may be needed")
+
+    def request_peer_info(self, unknown_peer_nickname):
+        """Request peer information from an unknown peer by sending our JOIN message."""
+        try:
+            print(f"[DEBUG] Requesting peer info from unknown peer: {unknown_peer_nickname}")
+            public_key_b64 = export_public_key_base64(self.public_key)
+            
+            # Send our JOIN message to prompt the unknown peer to respond with theirs
+            msg = ChatMessage("join", self.nickname, public_key_b64)
+            send_message_auto(msg)  # Raw broadcast
+            
+            print(f"[DEBUG] Sent peer info request (JOIN broadcast) for {unknown_peer_nickname}")
+            self.chat_display.append(f"📡 Sent peer discovery request for {unknown_peer_nickname}")
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to request peer info for {unknown_peer_nickname}: {e}")
+
+    def add_peer_to_ui(self, nickname):
+        """Add a peer to the UI list if not already present."""
+        user_items = [self.user_list.item(i).text() for i in range(self.user_list.count())]
+        user_entry = f"👤 {nickname}"
+        
+        if user_entry not in user_items:
+            self.user_list.addItem(user_entry)
+            print(f"[DEBUG] Added {nickname} to UI peer list")
+        else:
+            print(f"[DEBUG] {nickname} already in UI peer list")
 
     def toggle_mode(self):
         self.is_gateway_mode = not self.is_gateway_mode
@@ -450,8 +490,10 @@ Peer Count: {peer_count}
         if peer_count > 0:
             debug_info += "\nKnown Peers:\n"
             for peer_id, peer_info in self.peer_manager.peers.items():
+                last_seen_ago = int(time.time() - peer_info['last_seen'])
                 debug_info += f"  - {peer_info['nickname']} (ID: {peer_id[:8]}...)\n"
                 debug_info += f"    Public Key Length: {len(peer_info['public_key'])} chars\n"
+                debug_info += f"    Last Seen: {last_seen_ago} seconds ago\n"
         else:
             debug_info += "\nNo peers known.\n"
         
@@ -465,7 +507,15 @@ Peer Count: {peer_count}
                     debug_info += f" (age: {status['age_seconds']}s)\n"
             else:
                 debug_info += "\nNo pending multi-part messages.\n"
-            
+        
+        # Add peer discovery status
+        if self.is_connected:
+            debug_info += "\nPeer Discovery Status:\n"
+            debug_info += f"  - Periodic Announcements: {'Running' if self.announcement_timer else 'Stopped'}\n"
+            debug_info += f"  - Network Interface: {INTERFACE}\n"
+            debug_info += f"  - Regular Port: {DEST_PORT}\n"
+            debug_info += f"  - Fragment Port: {FRAGMENT_PORT}\n"
+        
         self.chat_display.append(debug_info)
         print(debug_info)
 
@@ -533,6 +583,48 @@ Peer Count: {peer_count}
             self.announcement_timer.cancel()
             self.announcement_timer = None
             print("[DEBUG] Periodic peer announcements stopped")
+
+    def start_peer_discovery(self):
+        """Start active peer discovery by sending multiple JOIN messages over time."""
+        def discovery_sequence():
+            try:
+                public_key_b64 = export_public_key_base64(self.public_key)
+                
+                # Send multiple JOIN messages with increasing delays to catch peers
+                # that might have been temporarily unavailable
+                discovery_intervals = [0, 5, 15, 30]  # seconds
+                
+                for i, delay in enumerate(discovery_intervals):
+                    if not self.is_connected:
+                        break
+                        
+                    if delay > 0:
+                        time.sleep(delay)
+                    
+                    if self.is_connected:  # Check again after sleep
+                        try:
+                            msg = ChatMessage("join", self.nickname, public_key_b64)
+                            send_message_auto(msg)
+                            print(f"[DEBUG] Peer discovery broadcast {i+1}/{len(discovery_intervals)} sent")
+                            
+                            # Update UI with progress
+                            if i == 0:
+                                self.chat_display.append("🔍 Starting peer discovery sequence...")
+                            elif i == len(discovery_intervals) - 1:
+                                self.chat_display.append("✅ Peer discovery sequence completed")
+                            
+                        except Exception as e:
+                            print(f"[ERROR] Peer discovery broadcast {i+1} failed: {e}")
+                
+                print("[DEBUG] Peer discovery sequence completed")
+                
+            except Exception as e:
+                print(f"[ERROR] Peer discovery sequence failed: {e}")
+        
+        # Run discovery in background thread
+        discovery_thread = threading.Thread(target=discovery_sequence, daemon=True)
+        discovery_thread.start()
+        print("[DEBUG] Started active peer discovery sequence")
 
     def closeEvent(self, event):
         if self.is_connected:
