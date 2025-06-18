@@ -9,6 +9,7 @@ import sys
 import os
 import time
 from scapy.all import sniff, Raw
+import threading
 
 from crypto_utils import generate_key_pair, load_keys, export_public_key_base64
 from message import ChatMessage
@@ -64,6 +65,9 @@ class ChatWindow(QMainWindow):
         self.is_gateway_mode = False
         self.network_receiver = None
         self.peer_manager = PeerManager(peer_timeout_seconds=300, inactive_callback=self.handle_inactive_peer)
+        
+        # Periodic peer announcement timer
+        self.announcement_timer = None
 
         self.init_ui()
         self.load_existing_keys()
@@ -199,9 +203,13 @@ class ChatWindow(QMainWindow):
             self.user_list.addItem(f"👤 {self.nickname} (Me)")
 
             self.send_join_message()
+            
+            # Start periodic peer announcement (every 2 minutes)
+            self.start_periodic_announcement()
 
             self.chat_display.append(f"🌐 Connected to network as '{self.nickname}'")
             self.chat_display.append("💡 You can now send and receive messages!")
+            self.chat_display.append("🔄 Periodic peer announcements enabled for better discovery")
 
         except Exception as e:
             QMessageBox.critical(self, "Connection Error", f"Failed to connect: {e}")
@@ -215,6 +223,9 @@ class ChatWindow(QMainWindow):
                 self.network_receiver.stop()
                 self.network_receiver.wait(3000)
                 self.network_receiver = None
+                
+            # Stop periodic announcements
+            self.stop_periodic_announcement()
 
             self.is_connected = False
             self.nickname = None
@@ -298,7 +309,22 @@ class ChatWindow(QMainWindow):
             # JOIN messages are broadcast without encryption for peer discovery
             print("[DEBUG] Broadcasting JOIN as raw message for peer discovery")
             self.chat_display.append("📡 Broadcasting JOIN message (raw - for peer discovery)")
-            send_message_auto(msg)  # No recipient key = raw broadcast
+            
+            # Send JOIN message multiple times with delays to improve reliability
+            def send_multiple_joins():
+                for i in range(3):  # Send 3 times
+                    try:
+                        send_message_auto(msg)  # No recipient key = raw broadcast
+                        print(f"[DEBUG] JOIN broadcast {i+1}/3 sent successfully")
+                        if i < 2:  # Don't sleep after the last one
+                            time.sleep(0.2)  # 200ms between broadcasts
+                    except Exception as e:
+                        print(f"[ERROR] Failed to send JOIN broadcast {i+1}/3: {e}")
+                print("[DEBUG] Completed multiple JOIN broadcasts")
+            
+            # Send in background thread to avoid blocking UI
+            join_thread = threading.Thread(target=send_multiple_joins, daemon=True)
+            join_thread.start()
 
         except Exception as e:
             print(f"[ERROR] Failed to send join message: {e}")
@@ -362,14 +388,28 @@ class ChatWindow(QMainWindow):
                         self.user_list.addItem(user_entry)
 
                     # Send my info back as a broadcast so the new peer can discover me
+                    # Add a small delay to ensure the new peer has time to start listening
                     try:
                         my_key_b64 = export_public_key_base64(self.public_key)
                         response_msg = ChatMessage("join", self.nickname, my_key_b64)
-                        print(f"[DEBUG] Sending JOIN response for {nickname} as broadcast")
-                        self.chat_display.append(f"📡 Broadcasting JOIN response for {nickname}")
-                        send_message_auto(response_msg)  # Use auto-routing for consistency
+                        print(f"[DEBUG] Sending JOIN response for {nickname} as broadcast (with 100ms delay)")
+                        self.chat_display.append(f"📡 Broadcasting JOIN response for {nickname} (delayed)")
+                        
+                        # Small delay to ensure new peer is ready to receive
+                        def delayed_response():
+                            time.sleep(0.1)  # 100ms delay
+                            try:
+                                send_message_auto(response_msg)
+                                print(f"[DEBUG] JOIN response sent successfully to help {nickname} discover me")
+                            except Exception as e:
+                                print(f"[ERROR] Failed to send delayed JOIN response: {e}")
+                        
+                        # Send response in background thread to avoid blocking UI
+                        response_thread = threading.Thread(target=delayed_response, daemon=True)
+                        response_thread.start()
+                        
                     except Exception as e:
-                        print(f"[ERROR] Failed to send JOIN response: {e}")
+                        print(f"[ERROR] Failed to prepare JOIN response: {e}")
                 else:
                     # This is a JOIN from a known peer. Ignore it to prevent a loop.
                     print(f"[DEBUG] Ignoring duplicate JOIN from known peer: {nickname}")
@@ -455,6 +495,44 @@ Peer Count: {peer_count}
                 self.user_list.takeItem(i)
                 print(f"[DEBUG] Removed inactive peer {nickname} from UI list")
                 break
+
+    def start_periodic_announcement(self):
+        """Start periodic announcement of our presence for better peer discovery."""
+        def announce_presence():
+            if self.is_connected and self.nickname:
+                try:
+                    print("[DEBUG] Sending periodic peer announcement")
+                    public_key_b64 = export_public_key_base64(self.public_key)
+                    msg = ChatMessage("join", self.nickname, public_key_b64)
+                    send_message_auto(msg)  # Raw broadcast
+                    print("[DEBUG] Periodic announcement sent")
+                except Exception as e:
+                    print(f"[ERROR] Periodic announcement failed: {e}")
+        
+        def schedule_next():
+            if self.is_connected:
+                announce_presence()
+                # Schedule next announcement in 2 minutes (120 seconds)
+                if self.announcement_timer:
+                    self.announcement_timer = threading.Timer(120.0, schedule_next)
+                    self.announcement_timer.daemon = True
+                    self.announcement_timer.start()
+        
+        # Stop any existing timer
+        self.stop_periodic_announcement()
+        
+        # Start the periodic announcements
+        self.announcement_timer = threading.Timer(120.0, schedule_next)  # First announcement in 2 minutes
+        self.announcement_timer.daemon = True
+        self.announcement_timer.start()
+        print("[DEBUG] Periodic peer announcements started (every 2 minutes)")
+
+    def stop_periodic_announcement(self):
+        """Stop periodic announcements."""
+        if self.announcement_timer:
+            self.announcement_timer.cancel()
+            self.announcement_timer = None
+            print("[DEBUG] Periodic peer announcements stopped")
 
     def closeEvent(self, event):
         if self.is_connected:
